@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Takeoff AI</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #111; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  header { text-align: center; padding: 2rem 1rem 1rem; }
+  header h1 { font-size: 2rem; color: #fff; letter-spacing: 0.05em; }
+  header p { color: #888; margin-top: 0.3rem; font-size: 0.95rem; }
+  .container { max-width: 720px; width: 100%; padding: 0 1rem 3rem; }
+  .drop-zone { border: 2px dashed #444; border-radius: 12px; padding: 3rem 1.5rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 1rem; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #6c8aff; background: rgba(108,138,255,0.05); }
+  .drop-zone p { color: #999; }
+  .drop-zone .filename { color: #6c8aff; margin-top: 0.5rem; font-weight: 600; }
+  .btn { display: inline-block; padding: 0.7rem 2rem; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: #6c8aff; color: #fff; }
+  .btn-primary:hover:not(:disabled) { opacity: 0.85; }
+  .btn-download { background: #2ecc71; color: #fff; margin-top: 1rem; text-decoration: none; }
+  .btn-download:hover { opacity: 0.85; }
+  .actions { text-align: center; margin-bottom: 1.5rem; }
+  .spinner { display: none; text-align: center; margin: 2rem 0; }
+  .spinner.active { display: block; }
+  .spinner .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #6c8aff; margin: 0 4px; animation: bounce 1.4s infinite ease-in-out both; }
+  .spinner .dot:nth-child(1) { animation-delay: -0.32s; }
+  .spinner .dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce { 0%,80%,100% { transform: scale(0); } 40% { transform: scale(1); } }
+  .spinner p { color: #888; margin-top: 0.8rem; font-size: 0.9rem; }
+  .error { background: #3a1a1a; border: 1px solid #ff4444; border-radius: 8px; padding: 1rem; margin: 1rem 0; color: #ff6b6b; display: none; }
+  .results { display: none; }
+  .results h2 { margin-bottom: 1rem; font-size: 1.2rem; color: #fff; }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.5rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; background: #1a1a2e; padding: 0.3rem 0.7rem; border-radius: 6px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .flagged-warning { background: #3a2a1a; border: 1px solid #ffaa44; border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1rem; color: #ffcc77; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid #2a2a2a; }
+  th { color: #aaa; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { font-size: 0.95rem; }
+  .download-section { text-align: center; margin-top: 1.5rem; }
+  .summary { color: #888; font-size: 0.85rem; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Takeoff AI</h1>
+  <p>AI-powered construction takeoff from PDF floor plans</p>
+</header>
+<div class="container">
+  <div class="drop-zone" id="dropZone">
+    <p>Drag & drop a PDF floor plan here, or click to browse</p>
+    <div class="filename" id="fileName"></div>
+    <input type="file" id="fileInput" accept=".pdf" hidden>
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary" id="submitBtn" disabled>Analyze Plan</button>
+  </div>
+  <div class="spinner" id="spinner">
+    <div><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <p>Analyzing floor plan with AI... this may take a minute</p>
+  </div>
+  <div class="error" id="errorBox"></div>
+  <div class="results" id="results">
+    <h2>Results</h2>
+    <div class="summary" id="summary"></div>
+    <div class="legend" id="legend"></div>
+    <div class="flagged-warning" id="flaggedWarning" style="display:none"></div>
+    <table>
+      <thead><tr><th>Wall Type</th><th>Linear Footage</th><th>Floors</th></tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <div class="download-section">
+      <a class="btn btn-download" id="downloadBtn" href="#" download>Download Annotated PDF</a>
+    </div>
+  </div>
+</div>
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileName = document.getElementById('fileName');
+const submitBtn = document.getElementById('submitBtn');
+const spinner = document.getElementById('spinner');
+const errorBox = document.getElementById('errorBox');
+const results = document.getElementById('results');
+let selectedFile = null;
+
+const COLOR_MAP = { M1: '#e53935', M2: '#1e88e5', M3: '#fb8c00', C1: '#43a047', C2: '#8e24aa', C3: '#fdd835', UNKNOWN: '#f48fb1' };
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.toLowerCase().endsWith('.pdf')) { selectedFile = f; fileName.textContent = f.name; submitBtn.disabled = false; }
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) { selectedFile = fileInput.files[0]; fileName.textContent = selectedFile.name; submitBtn.disabled = false; }
+});
+
+submitBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  errorBox.style.display = 'none'; results.style.display = 'none';
+  spinner.classList.add('active'); submitBtn.disabled = true;
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Upload failed'); }
+    const data = await res.json();
+    renderResults(data);
+  } catch (e) {
+    errorBox.textContent = e.message; errorBox.style.display = 'block';
+  } finally {
+    spinner.classList.remove('active'); submitBtn.disabled = false;
+  }
+});
+
+function renderResults(data) {
+  const report = data.report;
+  const jobId = data.job_id;
+  document.getElementById('summary').textContent =
+    `${report.total_segments} wall segments detected | ${report.total_linear_ft} total linear ft | Scale: ${report.scale || 'not detected'}`;
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  (report.wall_types || []).forEach(wt => {
+    const code = wt.code || wt;
+    const desc = wt.description || code;
+    const color = COLOR_MAP[code] || COLOR_MAP.UNKNOWN;
+    legend.innerHTML += `<div class="legend-item"><div class="legend-swatch" style="background:${color}"></div>${code}: ${desc}</div>`;
+  });
+
+  const flagged = document.getElementById('flaggedWarning');
+  if (report.flagged_count > 0) {
+    flagged.textContent = `${report.flagged_count} wall segment(s) flagged for review (low confidence or unknown type)`;
+    flagged.style.display = 'block';
+  } else { flagged.style.display = 'none'; }
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const typeTotals = {};
+  for (const [floor, types] of Object.entries(report.floors || {})) {
+    for (const [code, info] of Object.entries(types)) {
+      if (!typeTotals[code]) typeTotals[code] = { total: 0, floors: [] };
+      typeTotals[code].total += info.linear_ft;
+      typeTotals[code].floors.push(`${floor}: ${info.linear_ft.toFixed(1)} ft`);
+    }
+  }
+  for (const [code, info] of Object.entries(typeTotals)) {
+    const color = COLOR_MAP[code] || COLOR_MAP.UNKNOWN;
+    tbody.innerHTML += `<tr><td><span style="color:${color};font-weight:700">${code}</span></td><td>${info.total.toFixed(1)} ft</td><td>${info.floors.join(', ')}</td></tr>`;
+  }
+
+  document.getElementById('downloadBtn').href = `/download/${jobId}`;
+  results.style.display = 'block';
+}
+</script>
+</body>
+</html>
