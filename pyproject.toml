@@ -1,0 +1,23 @@
+[project]
+name = "takeoff-ai"
+version = "0.1.0"
+description = "AI-powered construction takeoff from architectural PDF floor plans"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1.0.0",
+    "PyMuPDF>=1.24.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "python-multipart>=0.0.9",
+    "tinydb>=4.8.0",
+    "openpyxl>=3.1.0",
+    "opencv-python-headless>=4.8.0",
+    "scipy>=1.11.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []

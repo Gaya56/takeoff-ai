@@ -5,14 +5,13 @@ if [ -z "$GEMINI_API_KEY" ]; then
   exit 1
 fi
 
-if [ ! -d ".venv" ]; then
-  echo "Creating virtual environment..."
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -r requirements.txt
-else
-  source .venv/bin/activate
+if ! command -v uv &> /dev/null; then
+  echo "Installing uv..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  source "$HOME/.local/bin/env"
 fi
 
+uv sync
+
 echo "Starting Takeoff AI server at http://localhost:8000"
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload

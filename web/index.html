@@ -42,6 +42,34 @@
   td { font-size: 0.95rem; }
   .download-section { text-align: center; margin-top: 1.5rem; }
   .summary { color: #888; font-size: 0.85rem; margin-bottom: 1rem; }
+  /* Structured input form */
+  .engineer-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; }
+  .engineer-form .full-width { grid-column: 1 / -1; }
+  .form-group label { display: block; font-size: 0.78rem; color: #aaa; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .form-group select, .form-group input, .form-group textarea {
+    width: 100%; background: #12121e; border: 1px solid #333; border-radius: 6px;
+    color: #e0e0e0; font-size: 0.88rem; padding: 0.55rem 0.7rem; font-family: inherit; transition: border-color 0.2s;
+  }
+  .form-group select:focus, .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #6c8aff; }
+  .form-group select option { background: #12121e; }
+  .form-group textarea { resize: vertical; min-height: 60px; }
+  .form-group .hint { font-size: 0.72rem; color: #555; margin-top: 0.2rem; }
+  .form-toggle { font-size: 0.82rem; color: #6c8aff; cursor: pointer; margin-bottom: 0.8rem; display: inline-block; }
+  .form-toggle:hover { text-decoration: underline; }
+  /* Meta badges */
+  .meta-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+  .meta-badge { background: #1a1a2e; padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.82rem; color: #aaa; }
+  .meta-badge span { color: #e0e0e0; font-weight: 600; }
+  /* Job history */
+  .job-history { margin-top: 2.5rem; }
+  .job-history h3 { font-size: 1rem; color: #888; margin-bottom: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .job-history table { font-size: 0.85rem; }
+  .job-history td { font-size: 0.85rem; }
+  .job-history a { color: #6c8aff; text-decoration: none; }
+  .job-history a:hover { text-decoration: underline; }
+  .status-complete { color: #2ecc71; }
+  .status-processing { color: #f39c12; }
+  .status-failed { color: #e74c3c; }
 </style>
 </head>
 <body>
@@ -55,17 +83,59 @@
     <div class="filename" id="fileName"></div>
     <input type="file" id="fileInput" accept=".pdf" hidden>
   </div>
+  <div class="notes-box">
+    <span class="form-toggle" id="formToggle">&#x25B6; Engineer Input (optional — improves accuracy)</span>
+    <div class="engineer-form" id="engineerForm" style="display:none">
+      <div class="form-group">
+        <label for="buildingType">Building Type</label>
+        <select id="buildingType">
+          <option value="">— Auto-detect —</option>
+          <option value="Residential">Residential</option>
+          <option value="Commercial">Commercial</option>
+          <option value="Industrial">Industrial</option>
+          <option value="Institutional">Institutional</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="numFloors">Number of Floors</label>
+        <input type="number" id="numFloors" min="1" max="99" placeholder="e.g. 3">
+      </div>
+      <div class="form-group">
+        <label for="drawingScale">Drawing Scale</label>
+        <select id="drawingScale">
+          <option value="">— Auto-detect —</option>
+          <option value='1/8" = 1&apos;-0"'>1/8" = 1'-0"</option>
+          <option value='1/4" = 1&apos;-0"'>1/4" = 1'-0"</option>
+          <option value="1:50">1:50</option>
+          <option value="1:100">1:100</option>
+          <option value="1:200">1:200</option>
+          <option value="custom">Custom...</option>
+        </select>
+        <input type="text" id="customScale" placeholder='e.g. 3/16" = 1&apos;-0"' style="display:none; margin-top:0.4rem;">
+      </div>
+      <div class="form-group">
+        <label for="wallCodes">Wall Type Codes</label>
+        <input type="text" id="wallCodes" placeholder="M1=Brick, M2=Canexel, C1=Load-bearing">
+        <div class="hint">Comma-separated. e.g. M1=Brick, M2=Siding, C1=Load-bearing, C2=Fire-rated</div>
+      </div>
+      <div class="form-group full-width">
+        <label for="specialInstructions">Special Instructions</label>
+        <textarea id="specialInstructions" placeholder="Any additional notes for the AI..."></textarea>
+      </div>
+    </div>
+  </div>
   <div class="actions">
     <button class="btn btn-primary" id="submitBtn" disabled>Analyze Plan</button>
   </div>
   <div class="spinner" id="spinner">
     <div><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-    <p>Analyzing floor plan with AI... this may take a minute</p>
+    <p id="progressMsg">Analyzing floor plan with AI... this may take a minute</p>
   </div>
   <div class="error" id="errorBox"></div>
   <div class="results" id="results">
     <h2>Results</h2>
     <div class="summary" id="summary"></div>
+    <div class="meta-badges" id="meta"></div>
     <div class="legend" id="legend"></div>
     <div class="flagged-warning" id="flaggedWarning" style="display:none"></div>
     <table>
@@ -74,8 +144,10 @@
     </table>
     <div class="download-section">
       <a class="btn btn-download" id="downloadBtn" href="#" download>Download Annotated PDF</a>
+      <a class="btn btn-download" id="downloadExcelBtn" href="#" download style="margin-left:0.5rem; background:#3498db;">Download Excel Report</a>
     </div>
   </div>
+  <div class="job-history" id="jobHistory"></div>
 </div>
 <script>
 const dropZone = document.getElementById('dropZone');
@@ -88,6 +160,32 @@ const results = document.getElementById('results');
 let selectedFile = null;
 
 const COLOR_MAP = { M1: '#e53935', M2: '#1e88e5', M3: '#fb8c00', C1: '#43a047', C2: '#8e24aa', C3: '#fdd835', UNKNOWN: '#f48fb1' };
+
+const PROGRESS_MSGS = [
+  'Analyzing floor plan with AI... this may take a minute',
+  'Reading drawing legend and scale...',
+  'Detecting wall segments on each page...',
+  'Identifying doors, windows, and structural elements...',
+  'Measuring linear footage per wall type...',
+  'Generating annotated PDF...',
+  'Almost done — finalizing report...'
+];
+let progressInterval = null;
+let progressIdx = 0;
+
+function startProgressCycle() {
+  progressIdx = 0;
+  const msg = document.getElementById('progressMsg');
+  if (msg) msg.textContent = PROGRESS_MSGS[0];
+  progressInterval = setInterval(() => {
+    progressIdx = (progressIdx + 1) % PROGRESS_MSGS.length;
+    if (msg) msg.textContent = PROGRESS_MSGS[progressIdx];
+  }, 8000);
+}
+
+function stopProgressCycle() {
+  if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+}
 
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -103,27 +201,85 @@ fileInput.addEventListener('change', () => {
 
 submitBtn.addEventListener('click', async () => {
   if (!selectedFile) return;
-  errorBox.style.display = 'none'; results.style.display = 'none';
+  errorBox.style.display = 'none';
   spinner.classList.add('active'); submitBtn.disabled = true;
+  startProgressCycle();
   const formData = new FormData();
   formData.append('file', selectedFile);
+
+  // Structured fields
+  const buildingType = document.getElementById('buildingType').value;
+  if (buildingType) formData.append('building_type', buildingType);
+
+  const numFloors = document.getElementById('numFloors').value;
+  if (numFloors) formData.append('num_floors', numFloors);
+
+  let scale = document.getElementById('drawingScale').value;
+  if (scale === 'custom') scale = document.getElementById('customScale').value;
+  if (scale) formData.append('scale', scale);
+
+  const wallCodes = document.getElementById('wallCodes').value.trim();
+  if (wallCodes) formData.append('wall_codes', wallCodes);
+
+  const specialInstructions = document.getElementById('specialInstructions').value.trim();
+  if (specialInstructions) formData.append('special_instructions', specialInstructions);
+
+  // Legacy notes field — send special_instructions as notes for backward compat
+  if (specialInstructions) formData.append('notes', specialInstructions);
+
   try {
     const res = await fetch('/upload', { method: 'POST', body: formData });
     if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Upload failed'); }
     const data = await res.json();
-    renderResults(data);
+    renderResults(data.job_id, data.report);
+    loadJobHistory();
   } catch (e) {
     errorBox.textContent = e.message; errorBox.style.display = 'block';
   } finally {
+    stopProgressCycle();
     spinner.classList.remove('active'); submitBtn.disabled = false;
   }
 });
 
-function renderResults(data) {
-  const report = data.report;
-  const jobId = data.job_id;
+// Engineer form toggle
+document.getElementById('formToggle').addEventListener('click', () => {
+  const form = document.getElementById('engineerForm');
+  const toggle = document.getElementById('formToggle');
+  if (form.style.display === 'none') {
+    form.style.display = 'grid';
+    toggle.innerHTML = '&#x25BC; Engineer Input (optional — improves accuracy)';
+  } else {
+    form.style.display = 'none';
+    toggle.innerHTML = '&#x25B6; Engineer Input (optional — improves accuracy)';
+  }
+});
+
+// Custom scale toggle
+document.getElementById('drawingScale').addEventListener('change', (e) => {
+  const custom = document.getElementById('customScale');
+  custom.style.display = e.target.value === 'custom' ? 'block' : 'none';
+});
+
+function renderResults(jobId, report) {
   document.getElementById('summary').textContent =
     `${report.total_segments} wall segments detected | ${report.total_linear_ft} total linear ft | Scale: ${report.scale || 'not detected'}`;
+
+  // Meta badges
+  const meta = document.getElementById('meta');
+  meta.innerHTML = '';
+  if (report.total_segments != null) meta.innerHTML += `<div class="meta-badge">Segments: <span>${report.total_segments}</span></div>`;
+  if (report.total_linear_ft != null) meta.innerHTML += `<div class="meta-badge">Linear Ft: <span>${report.total_linear_ft}</span></div>`;
+  if (report.scale) meta.innerHTML += `<div class="meta-badge">Scale: <span>${report.scale}</span></div>`;
+  if (report.flagged_count > 0) meta.innerHTML += `<div class="meta-badge" style="border:1px solid #ffaa44">Flagged: <span style="color:#ffcc77">${report.flagged_count}</span></div>`;
+
+  // Per-page detection counts
+  if (report.detections_per_page) {
+    for (const [page, count] of Object.entries(report.detections_per_page)) {
+      const pageNum = parseInt(page) + 1;
+      const warning = count === 0 ? ' ⚠' : (count < 10 ? ' ?' : '');
+      meta.innerHTML += `<div class="meta-badge">Page ${pageNum}: <span>${count} det${warning}</span></div>`;
+    }
+  }
 
   const legend = document.getElementById('legend');
   legend.innerHTML = '';
@@ -139,6 +295,22 @@ function renderResults(data) {
     flagged.textContent = `${report.flagged_count} wall segment(s) flagged for review (low confidence or unknown type)`;
     flagged.style.display = 'block';
   } else { flagged.style.display = 'none'; }
+
+  // Pipeline errors
+  const errorsContainer = document.getElementById('errorsContainer');
+  if (errorsContainer) errorsContainer.remove();
+  if (report.errors && report.errors.length > 0) {
+    const errDiv = document.createElement('div');
+    errDiv.id = 'errorsContainer';
+    errDiv.className = 'flagged-warning';
+    errDiv.style.borderColor = '#ff6b6b';
+    errDiv.style.background = '#3a1a1a';
+    errDiv.style.color = '#ff9999';
+    errDiv.innerHTML = '<strong>Pipeline Issues:</strong><ul style="margin:0.3rem 0 0 1.2rem;padding:0">' +
+      report.errors.map(e => `<li>Page ${(e.page||0)+1}: ${e.error}</li>`).join('') +
+      '</ul>';
+    document.getElementById('flaggedWarning').after(errDiv);
+  }
 
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
@@ -156,8 +328,45 @@ function renderResults(data) {
   }
 
   document.getElementById('downloadBtn').href = `/download/${jobId}`;
+  document.getElementById('downloadExcelBtn').href = `/download/${jobId}/excel`;
   results.style.display = 'block';
 }
+
+// Job history
+async function loadJobHistory() {
+  try {
+    const res = await fetch('/jobs');
+    if (!res.ok) return;
+    const data = await res.json();
+    const jobs = data.jobs || [];
+    if (jobs.length === 0) return;
+    const container = document.getElementById('jobHistory');
+    const rows = jobs.map(j => {
+      const date = j.timestamp ? new Date(j.timestamp).toLocaleString() : '—';
+      const statusClass = j.status === 'complete' ? 'status-complete' : j.status === 'failed' ? 'status-failed' : 'status-processing';
+      const downloads = j.status === 'complete'
+        ? `<a href="/download/${j.job_id}">PDF</a> | <a href="/download/${j.job_id}/excel">Excel</a>`
+        : '—';
+      return `<tr>
+        <td>${j.filename || '—'}</td>
+        <td>${date}</td>
+        <td class="${statusClass}">${j.status || '—'}</td>
+        <td>${j.total_segments != null ? j.total_segments : '—'}</td>
+        <td>${j.total_linear_ft != null ? j.total_linear_ft : '—'}</td>
+        <td>${j.scale || '—'}</td>
+        <td>${j.flagged_count != null ? j.flagged_count : '—'}</td>
+        <td>${downloads}</td>
+      </tr>`;
+    }).join('');
+    container.innerHTML = `<h3>Job History</h3><table>
+      <thead><tr><th>File</th><th>Date</th><th>Status</th><th>Segments</th><th>Linear Ft</th><th>Scale</th><th>Flagged</th><th>Downloads</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch (e) { /* silently ignore history errors */ }
+}
+
+// Load history on page load
+loadJobHistory();
 </script>
 </body>
 </html>
