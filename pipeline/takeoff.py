@@ -13,46 +13,73 @@ from google.genai import types
 
 
 COLOR_MAP = {
-    "M1": (1, 0, 0),        # Red - Brick exterior
-    "M2": (0, 0, 1),        # Blue - Siding
-    "M3": (1, 0.5, 0),      # Orange - Other masonry
-    "C1": (0, 0.5, 0),      # Green - Load-bearing partition
-    "C2": (0.5, 0, 0.5),    # Purple - Non-load-bearing
-    "C3": (1, 1, 0),         # Yellow - Other partition
+    # Exterior walls
+    "M1": (0.9, 0.1, 0.1),   # Red
+    "M2": (0.1, 0.3, 0.9),   # Blue
+    "M3": (0.9, 0.5, 0.0),   # Orange
+    # Interior partitions
+    "C1": (0.0, 0.6, 0.2),   # Green
+    "C2": (0.5, 0.0, 0.7),   # Purple
+    "C3": (0.8, 0.8, 0.0),   # Yellow
+    # Doors / windows
+    "DOOR": (0.0, 0.7, 0.8), # Cyan
+    "WIN":  (0.0, 0.8, 0.6), # Teal
+    # Structural
+    "BEAM": (0.6, 0.3, 0.0), # Brown
+    "COL":  (0.4, 0.4, 0.4), # Gray
+    "STAIR":(0.7, 0.5, 0.0), # Dark yellow
+    # Dimensions / rooms
+    "DIM":  (0.5, 0.5, 0.5), # Gray
+    "ROOM": (0.3, 0.6, 0.9), # Light blue
 }
 
-FLAGGED_COLOR = (1, 0.5, 0.5)  # Pink
+# Category fallback colors (when code not in COLOR_MAP)
+CATEGORY_COLOR = {
+    "wall":       (0.7, 0.2, 0.2),
+    "door":       (0.0, 0.7, 0.8),
+    "window":     (0.0, 0.8, 0.6),
+    "structural": (0.5, 0.3, 0.0),
+    "dimension":  (0.5, 0.5, 0.5),
+    "room":       (0.3, 0.6, 0.9),
+    "other":      (0.6, 0.6, 0.6),
+}
 
-CONFIDENCE_THRESHOLD = 0.7
+FLAGGED_COLOR = (1, 0.4, 0.5)   # Pink/red for uncertain
+
+CONFIDENCE_THRESHOLD = 0.65
 
 GEMINI_PROMPT = """You are an expert construction estimator analyzing an architectural floor plan.
 
-Analyze this floor plan image carefully and return a JSON object with exactly these fields:
+Analyze this floor plan image and return a JSON object with these fields:
 
-1. **wall_types**: Array of wall types from the legend or assembly detail table. Each entry:
-   - "code": type code exactly as shown (e.g. "M1", "M2", "C1", "C2", "C3")
-   - "description": what this wall is (e.g. "brick veneer exterior", "load-bearing partition")
+1. **wall_types**: All element types from the legend/assembly table. Each:
+   - "code": exact code (e.g. "M1", "C1", "DOOR", "WIN", "DIM")
+   - "description": what it is (e.g. "brick exterior wall", "swing door", "window opening")
+   - "category": one of "wall", "door", "window", "dimension", "structural", "room", "other"
 
-2. **scale**: Drawing scale string if visible (e.g. "1/8 inch = 1 foot"), or null.
+2. **scale**: Drawing scale string (e.g. "1/8 inch = 1 foot"), or null.
 
-3. **detections**: Array of individual wall segment detections. For EACH visible wall segment:
-   - "type_code": MUST match a code from wall_types. Only use "UNKNOWN" if truly unidentifiable.
+3. **detections**: Every identifiable element on this floor plan page:
+   - "type_code": code from wall_types, or standard codes: DOOR, WIN, BEAM, COL, STAIR, ROOM
+   - "category": "wall" | "door" | "window" | "dimension" | "structural" | "room" | "other"
    - "page": 0
-   - "x1": x pixel coordinate of the START point of this wall segment (left end or top end)
-   - "y1": y pixel coordinate of the START point
-   - "x2": x pixel coordinate of the END point of this wall segment (right end or bottom end)
-   - "y2": y pixel coordinate of the END point
-   - "real_length_ft": wall length in feet using the scale bar. If no scale, estimate from context.
-   - "confidence": 0.0-1.0. Use 0.9 for clearly identifiable walls, 0.6 for uncertain ones.
+   - "x1": x pixel of element START point (left/top end of centerline)
+   - "y1": y pixel of element START point
+   - "x2": x pixel of element END point (right/bottom end of centerline)
+   - "y2": y pixel of element END point
+   - "real_length_ft": length in feet using scale. Estimate if no scale.
+   - "label": short text label to show (e.g. "M1", "DOOR", "12.5ft")
+   - "confidence": 0.0-1.0
 
 CRITICAL INSTRUCTIONS:
-- x1,y1 and x2,y2 are the TWO ENDPOINTS of the wall centerline, not bounding box corners.
-- For a horizontal wall: y1 == y2 (approximately), x1 < x2
-- For a vertical wall: x1 == x2 (approximately), y1 < y2
-- Pixel coordinates are in the image coordinate system (top-left = 0,0)
-- Identify as many wall segments as possible — aim for complete coverage
-- Match type codes from the legend first. Common codes: M1, M2, M3 = exterior; C1, C2, C3 = interior
-- If this page is a legend/details page with no floor plan, return empty detections array
+- x1,y1 → x2,y2 are the TWO ENDPOINTS of the centerline (not bounding box corners)
+- Horizontal elements: y1 ≈ y2, x1 < x2
+- Vertical elements: x1 ≈ x2, y1 < y2
+- Cover ALL elements: walls, doors, windows, dimension lines, room labels, stairs
+- Match wall codes from the legend first (M1/M2/M3 = exterior, C1/C2/C3 = interior partitions)
+- Doors: use DOOR + arc center at x1,y1; windows: use WIN
+- If this is a legend/title/detail page with no floor plan, return empty detections array
+- Aim for complete coverage — mark every visible element
 
 Return ONLY valid JSON. No markdown, no explanation."""
 
@@ -233,7 +260,8 @@ class TakeoffPipeline:
             is_flagged = confidence < CONFIDENCE_THRESHOLD or type_code == "UNKNOWN"
             is_very_uncertain = confidence < 0.45 or type_code == "UNKNOWN"
 
-            color = COLOR_MAP.get(type_code, FLAGGED_COLOR)
+            category = det.get("category", "wall")
+            color = COLOR_MAP.get(type_code) or CATEGORY_COLOR.get(category, FLAGGED_COLOR)
             draw_color = FLAGGED_COLOR if is_flagged else color
 
             # Draw wall segment as thick colored line
