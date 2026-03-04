@@ -8,18 +8,29 @@ Client: Salem Al-Zahari, Genesis Open Developments Inc.
 ---
 
 ## Stack
-| Layer | Tech | Status |
-|-------|------|--------|
-| AI Vision | Gemini 3.1 Pro (`gemini-3.1-pro-preview`) + 3 Flash (`gemini-3-flash-preview`) | ✅ Working |
-| PDF read/write | PyMuPDF (fitz) | ✅ Working |
-| Vector snapping | scipy cKDTree + PyMuPDF `get_drawings()` | ✅ Working |
-| Backend API | FastAPI + uvicorn | ✅ Working |
-| Frontend | Single HTML file (structured engineer input) | ✅ Working |
-| Job storage | TinyDB (`data/jobs.json`) | ✅ Persistent |
-| Excel export | openpyxl | ✅ Working |
-| Image preprocessing | opencv-python-headless (color-preserving) | ✅ Working |
-| Package manager | **uv** (not pip) | ✅ Active |
-| Auth | None (MVP) | ⚠️ Not yet |
+| Layer | Tech | Role | Status |
+|-------|------|------|--------|
+| AI Vision | Gemini 3.1 Pro + 3 Flash (`google-genai` SDK) | Legend extraction, localization, element detection | ✅ Working |
+| PDF | PyMuPDF (fitz) | Render pages, extract vector lines, draw annotations | ✅ Working |
+| Spatial Index | scipy cKDTree | Snap AI coordinates to real PDF vector line endpoints | ✅ Working |
+| API | FastAPI + uvicorn | Backend REST API | ✅ Working |
+| Frontend | Single HTML file (vanilla JS) | Drag-drop upload, engineer input form, results display | ✅ Working |
+| Storage | TinyDB (`data/jobs.json`) | Persistent job records | ✅ Persistent |
+| Excel | openpyxl | Export material quantity reports to .xlsx | ✅ Working |
+| Image | opencv-python-headless | HSV color-preserving preprocessing (remove fills, keep lines) | ✅ Working |
+| Package mgr | **uv** (not pip) | Dependency management | ✅ Active |
+| Auth | None | MVP — no login/API key | ⚠️ Not yet |
+
+<!-- TODO: Do a market search on each layer — evaluate alternatives that could improve
+accuracy, speed, or developer experience. Candidates to investigate:
+- AI: GPT-4o vision, Claude vision, DeepSeek-VL2, fine-tuned YOLO for architectural drawings
+- PDF: pdfplumber (read-only), Poppler, pdf2image
+- Spatial: rtree (R-tree), shapely STRtree, sklearn BallTree
+- API: Litestar, Starlette
+- Frontend: HTMX, Svelte, React
+- Storage: SQLite, Supabase, PostgreSQL
+- Image: scikit-image, Pillow
+Also evaluate what to ADD: topology validation lib, CAD parser (ezdxf), auth (Clerk/Auth0) -->
 
 ---
 

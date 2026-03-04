@@ -40,16 +40,19 @@ Or: `GEMINI_API_KEY=your_key ./start.sh`
 
 ## Stack
 
-| Layer | Tech |
-|-------|------|
-| AI Vision | Gemini 3.1 Pro + 3 Flash (google-genai SDK) |
-| PDF | PyMuPDF (render, vector extract, annotate) |
-| Spatial Index | scipy cKDTree |
-| API | FastAPI + uvicorn |
-| Frontend | Single HTML (dark theme, drag-drop, job history) |
-| Storage | TinyDB |
-| Excel | openpyxl |
-| Preprocessing | opencv-python-headless (HSV color-preserving) |
+| Layer | Tech | Role |
+|-------|------|------|
+| AI Vision | Gemini 3.1 Pro + 3 Flash (`google-genai` SDK) | Legend extraction, localization, element detection |
+| PDF | PyMuPDF (fitz) | Render pages, extract vector lines, draw annotations |
+| Spatial Index | scipy cKDTree | Snap AI coordinates to real PDF vector line endpoints |
+| API | FastAPI + uvicorn | Backend REST API |
+| Frontend | Single HTML (vanilla JS) | Drag-drop upload, engineer input, results display |
+| Storage | TinyDB | Persistent job records |
+| Excel | openpyxl | Material quantity report export (.xlsx) |
+| Image | opencv-python-headless | HSV color-preserving preprocessing |
+| Package mgr | uv | Dependency management |
+
+<!-- TODO: Market search each layer for better alternatives or additions -->
 
 ## Wall Type Color Map
 
