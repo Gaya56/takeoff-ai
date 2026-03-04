@@ -401,7 +401,7 @@ class TakeoffPipeline:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3-flash-preview",
                 contents=[
                     types.Content(parts=[
                         types.Part(
@@ -451,7 +451,7 @@ class TakeoffPipeline:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3-flash-preview",
                 contents=[
                     types.Content(parts=[
                         types.Part(
@@ -570,7 +570,7 @@ class TakeoffPipeline:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.5-pro",
+                model="gemini-3.1-pro-preview",
                 contents=[
                     types.Content(parts=[
                         types.Part(

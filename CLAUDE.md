@@ -10,7 +10,7 @@ Client: Salem Al-Zahari, Genesis Open Developments Inc.
 ## Stack
 | Layer | Tech | Status |
 |-------|------|--------|
-| AI Vision | Gemini 2.5 Pro (`gemini-2.5-pro`) + Flash (`gemini-2.5-flash`) | ✅ Working |
+| AI Vision | Gemini 3.1 Pro (`gemini-3.1-pro-preview`) + 3 Flash (`gemini-3-flash-preview`) | ✅ Working |
 | PDF read/write | PyMuPDF (fitz) | ✅ Working |
 | Vector snapping | scipy cKDTree + PyMuPDF `get_drawings()` | ✅ Working |
 | Backend API | FastAPI + uvicorn | ✅ Working |
@@ -155,9 +155,9 @@ GEMINI_API_KEY=your_key uv run python tests/test_pipeline.py
 - `real_len > 100` — length filter (skip non-structural segments over 100 ft)
 - Duplicate detection threshold: `0.015` normalized coords (~10pt on 700pt page)
 - Geometric snap: lines within 5deg of H/V/45deg snapped to exact angle
-- Legend extraction model: `gemini-2.5-flash` — reads wall codes + scale from legend
-- Localization model: `gemini-2.5-flash` — finds floor plan crop rect + scale bar calibration (max_output_tokens=2048)
-- Detection model: `gemini-2.5-pro` — element detection (no thinking_config — incompatible with response_schema per Gemini docs)
+- Legend extraction model: `gemini-3-flash-preview` — reads wall codes + scale from legend
+- Localization model: `gemini-3-flash-preview` — finds floor plan crop rect + scale bar calibration (max_output_tokens=2048)
+- Detection model: `gemini-3.1-pro-preview` — element detection (no thinking_config — incompatible with response_schema per Gemini docs)
 - `_compute_real_lengths()` — fallback length calculation from coords+scale when Gemini returns 0
 
 ## Color Map

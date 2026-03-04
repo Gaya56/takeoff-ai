@@ -1,66 +1,110 @@
 # takeoff-ai
 
-AI-powered construction takeoff tool for Genesis Open Developments Inc. Upload a PDF floor plan → get back an annotated PDF with color-coded wall segments + a material quantity report in JSON and Excel.
+AI-powered construction takeoff from architectural PDF floor plans. Upload a PDF → get an annotated PDF with color-coded elements + material quantity report (JSON + Excel).
 
-## Features
+**Client:** Salem Al-Zahari, Genesis Open Developments Inc.
 
-- Reads legend/assembly details to identify wall type codes (M1, M2, C1, etc.)
-- Detects individual wall segments using Gemini 2.5 Flash Vision
-- Draws colored overlays on the PDF per wall type
-- Generates linear footage report per wall type, per floor
-- Exports Excel report (.xlsx) with floor/type/footage breakdown
-- Flags low-confidence detections (pink) for human review
-- Parallel Gemini calls — 3-page PDF processes in ~2.5 min
-- Persistent job storage (TinyDB) — jobs survive server restarts
-- Job history dashboard in the UI with re-openable reports
+## How It Works
+
+```
+PDF Upload → Legend Extraction (Gemini 3 Flash)
+           → Floor Plan Localization (Gemini 3 Flash)
+           → Element Detection (Gemini 3.1 Pro)
+           → Vector Line Snapping (scipy cKDTree + PyMuPDF)
+           → Post-Detection Validation
+           → Annotated PDF + Report (JSON + Excel)
+```
+
+### 3-Call Gemini Pipeline
+1. **Legend** — Flash reads wall codes, scale, floor labels from legend panel
+2. **Localize** — Flash finds floor plan bounding box + scale bar per page
+3. **Detect** — Pro identifies every wall segment, door, window, structural element with coordinates
+
+### Post-Processing
+- **Vector snapping** — snaps AI coordinates to exact PDF vector lines (eliminates ~15pt error)
+- **Validation** — duplicate removal, geometric axis snap, scale verification, wall type consistency
+- **Length computation** — real-world linear footage from coordinates + scale ratio
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/Gaya56/takeoff-ai
 cd takeoff-ai
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-GEMINI_API_KEY=your_key uvicorn api.main:app --reload
+# Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+GEMINI_API_KEY=your_key uv run uvicorn api.main:app --reload
 # Open http://localhost:8000
 ```
 
-Or use the helper:
-```bash
-GEMINI_API_KEY=your_key ./start.sh
-```
+Or: `GEMINI_API_KEY=your_key ./start.sh`
 
-## Running Tests
+## Stack
 
-```bash
-source .venv/bin/activate
-GEMINI_API_KEY=your_key python tests/test_pipeline.py
-# Outputs annotated PDFs to tests/output/
-```
+| Layer | Tech |
+|-------|------|
+| AI Vision | Gemini 3.1 Pro + 3 Flash (google-genai SDK) |
+| PDF | PyMuPDF (render, vector extract, annotate) |
+| Spatial Index | scipy cKDTree |
+| API | FastAPI + uvicorn |
+| Frontend | Single HTML (dark theme, drag-drop, job history) |
+| Storage | TinyDB |
+| Excel | openpyxl |
+| Preprocessing | opencv-python-headless (HSV color-preserving) |
 
 ## Wall Type Color Map
 
-| Code | Color  | Description            |
-|------|--------|------------------------|
-| M1   | Red    | Brick exterior         |
-| M2   | Blue   | Siding exterior        |
-| M3   | Orange | Other masonry          |
-| C1   | Green  | Load-bearing partition |
-| C2   | Purple | Stairway/fire partition|
-| C3   | Yellow | Double/party wall      |
-| DOOR | Cyan   | Door openings          |
-| WIN  | Teal   | Window openings        |
-| BEAM | Brown  | Structural beam        |
-| COL  | Gray   | Column                 |
-| ?    | Pink   | Unknown / flagged      |
+| Code | Color | Description |
+|------|-------|-------------|
+| M1 | Red | Brick exterior |
+| M2 | Blue | Siding exterior |
+| M3 | Orange | Other masonry |
+| C1 | Green | Load-bearing partition |
+| C2 | Purple | Stairway/fire partition |
+| C3 | Yellow | Double/party wall |
+| DOOR | Cyan | Door openings |
+| WIN | Teal | Window openings |
+| BEAM/COL | Brown/Gray | Structural |
+| STAIR | Dark Yellow | Stairway |
+| Flagged | Pink | Low confidence — needs review |
 
 ## API Routes
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| POST | `/upload` | Upload PDF, run pipeline, return report |
+| POST | `/upload` | Upload PDF + engineer context, run pipeline |
 | GET | `/download/{job_id}` | Download annotated PDF |
 | GET | `/download/{job_id}/excel` | Download Excel report |
-| GET | `/jobs` | List all jobs (sorted newest first) |
-| GET | `/jobs/{job_id}/report` | Get report JSON for a specific job |
+| GET | `/jobs` | List all jobs |
+| GET | `/jobs/{job_id}/report` | Get report JSON |
 | GET | `/health` | Health check |
+
+## Engineer Input Fields
+
+The upload form accepts structured context that improves accuracy:
+- **Building Type** — Residential / Commercial / Industrial / Institutional
+- **Number of Floors** — helps set page structure expectations
+- **Drawing Scale** — 1/8" = 1'-0", 1/4" = 1'-0", etc.
+- **Wall Codes** — e.g. `M1=Brick, C1=Load-bearing, C2=Fire-rated`
+- **Special Instructions** — free-form notes for edge cases
+
+## Test Results
+
+See `samples/inputs/RATINGS.md` for detailed test run tracking.
+
+| Test PDF | Pages | Vectors | Best Score | Status |
+|----------|-------|---------|------------|--------|
+| LA County Hospital | 4 | 189K | 5/10 | Active testing |
+| Calgary Residential | 26 | N/A | N/A | Corrupted — removed |
+
+## File Structure
+
+```
+pipeline/takeoff.py   ← Core AI pipeline (edit this most)
+api/main.py           ← FastAPI routes
+web/index.html        ← Frontend UI
+samples/inputs/       ← Test PDFs + RATINGS.md
+samples/reference/    ← Visual QA targets (don't feed to pipeline)
+data/jobs/            ← Per-job output (gitignored)
+```
+
+Full architecture details in `CLAUDE.md`.
