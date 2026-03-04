@@ -41,9 +41,7 @@ takeoff-ai/
 ├── samples/
 │   ├── reference/        ← TARGET EXAMPLES — do NOT run through pipeline
 │   └── inputs/           ← RAW INPUTS — use these to test
-├── results/              ← Manual test drop folder
 ├── pyproject.toml        ← uv project definition (primary deps file)
-├── requirements.txt      ← Legacy pip reference only
 ├── start.sh              ← One-command startup (uses uv)
 └── .env.example          ← GEMINI_API_KEY placeholder
 ```
@@ -52,10 +50,11 @@ takeoff-ai/
 
 ## Test Files — READ THIS CAREFULLY ⚠️
 
-| File | Role | Use it for |
-|------|------|------------|
-| `samples/reference/quadruplex_laval.pdf` | **REFERENCE TARGET** — finished/annotated example showing what good output looks like | Visual QA comparison only. **Never feed into the pipeline.** |
-| `samples/inputs/lacounty_hospital_floorplan.pdf` | **RAW TEST INPUT** — unannotated institutional floor plan | Feed into the pipeline to test/benchmark |
+| File | Role | Status | Use it for |
+|------|------|--------|------------|
+| `samples/reference/quadruplex_laval.pdf` | **REFERENCE TARGET** — finished/annotated example | OK | Visual QA comparison only. **Never feed into the pipeline.** |
+| `samples/inputs/lacounty_hospital_floorplan.pdf` | **RAW TEST INPUT** — 4-page institutional (LA County hospital) | OK (4.5MB, 32K vectors) | Feed into the pipeline to test/benchmark |
+| `samples/inputs/calgary_permit_drawing_residential.pdf` | **RAW TEST INPUT** — 26-page Calgary residential permit set | **CORRUPTED** — all zlib streams broken, renders blank white | **Needs re-download.** MuPDF, Poppler, and qpdf all fail. 0 extractable content. |
 
 **Rule:** Run the pipeline on files in `samples/inputs/`. Compare output visually against `samples/reference/quadruplex_laval.pdf` as your quality bar.
 
@@ -148,15 +147,18 @@ GEMINI_API_KEY=your_key uv run python tests/test_pipeline.py
 ---
 
 ## Key Constants (pipeline/takeoff.py)
-- `CONFIDENCE_THRESHOLD = 0.65` — below this, walls flagged for review (pink)
+- `CONFIDENCE_THRESHOLD = 0.40` — below this, walls flagged for review (pink). Was 0.65, lowered because Gemini defaults to 0.5 confidence.
 - `SNAP_THRESHOLD = 15.0` — PDF points (~5mm) max distance to snap to vector line
+- `FLOOR_PLAN_TOP_FRAC = 0.05` — fallback crop top margin (was 0.40, cropped out floor plans)
+- `FLOOR_PLAN_BOTTOM_FRAC = 0.95` — fallback crop bottom margin
 - `bbox_area / page_area > 0.15` — area-ratio filter threshold (skip room-zone boxes)
 - `real_len > 100` — length filter (skip non-structural segments over 100 ft)
 - Duplicate detection threshold: `0.015` normalized coords (~10pt on 700pt page)
 - Geometric snap: lines within 5deg of H/V/45deg snapped to exact angle
 - Legend extraction model: `gemini-2.5-flash` — reads wall codes + scale from legend
-- Localization model: `gemini-2.5-flash` — finds floor plan crop rect + scale bar calibration
-- Detection model: `gemini-2.5-pro` — element detection with 8000-token thinking budget
+- Localization model: `gemini-2.5-flash` — finds floor plan crop rect + scale bar calibration (max_output_tokens=2048)
+- Detection model: `gemini-2.5-pro` — element detection (no thinking_config — incompatible with response_schema per Gemini docs)
+- `_compute_real_lengths()` — fallback length calculation from coords+scale when Gemini returns 0
 
 ## Color Map
 | Code | Color | Type |
@@ -248,15 +250,31 @@ Put any new test inputs in `samples/inputs/`.
 
 ---
 
+## Known Issues (discovered during testing)
+1. **Calgary PDF corrupted** — removed from repo. All 26 pages had broken zlib streams. Need replacement from source.
+2. **Localization JSON truncation** — Gemini Flash localize call returns truncated JSON on complex sheets (e.g. `{"floor_plan_x0": 0` gets cut off). Fixed by increasing `max_output_tokens` from 512 to 2048, but still fails on some sheets — falls back to static crop.
+3. **All detections flagged at confidence 0.5** — Gemini returns default 0.5 confidence for most detections. Fixed by lowering `CONFIDENCE_THRESHOLD` to 0.40. Long-term: prompt Gemini to return meaningful confidence values.
+4. **Multi-plan sheets underdetected** — Page 2 of LA County PDF has 4 stacked floor plans but only got 67 detections. Single crop can't handle multi-plan layouts. Need multi-region detection.
+5. **Gemini native bbox uses 0-1000 coords** — our schema forces 0-1 floats, which may reduce spatial precision. Consider switching to integer coords.
+
+## Test Ratings
+See `samples/inputs/RATINGS.md` for detailed per-run test results and scoring.
+
 ## Next Steps (in order)
-1. **Test v2 pipeline** with `samples/inputs/lacounty_hospital_floorplan.pdf` + `calgary_permit_drawing_residential.pdf` — verify vector snapping, 3-call pipeline, new prompts
-2. **Add topology validation** — enforce closed room polygons, wall connectivity at corners, door/window width proportionality. Biggest remaining accuracy gain.
-3. Add 2-3 Canadian commercial building PDFs to `samples/inputs/`
-4. Gather Salem's feedback on annotation quality, engineer input form, and Excel report format
-5. Add API key auth (2h) when URL goes semi-public
-6. Supabase migration (replace TinyDB) for multi-user prod
-7. Consider fine-tuning / specialized model if stuck below 90% quality
+1. **Fix multi-plan sheet detection** — detect multiple floor plan regions per page, run detection on each separately
+2. **Replace corrupted Calgary PDF** — find alternative Canadian residential permit set
+3. **Add topology validation** — enforce closed room polygons, wall connectivity at corners. Biggest remaining accuracy gap.
+4. **Improve confidence scoring** — prompt Gemini to return meaningful confidence values, not default 0.5
+5. Add 2-3 Canadian commercial building PDFs to `samples/inputs/`
+6. Gather Salem's feedback on annotation quality, engineer input form, and Excel report format
+7. Add API key auth when URL goes semi-public
+8. Supabase migration (replace TinyDB) for multi-user prod
 
 ## Implementation History
 - **v1** (commit ed15520): Initial MVP — 2-call pipeline (Flash localize + Pro detect), ~70% accuracy
-- **v2** (current): 7-phase accuracy upgrade — vector snapping, 3-call pipeline, domain prompts, color-preserving preprocessing, post-detection validation, structured engineer input, error handling. Target: 75-85%
+- **v2** (commit efe0004): 7-phase accuracy upgrade — vector snapping, 3-call pipeline, domain prompts, color-preserving preprocessing, post-detection validation, structured engineer input, error handling
+- **v2-fix1**: Localization crop 0.05/0.95, compute lengths from coords+scale, remove thinking_config, log exceptions
+- **v2-fix2**: Localization max_output_tokens 512→2048, confidence threshold 0.65→0.40
+- **v2 test 1** (Calgary PDF): 0 detections — corrupted PDF, not pipeline bug
+- **v2 test 2** (LA County hospital): 572 segments, 10,089 linear ft. Length computation working. All flagged (confidence issue). Rating: 5/10
+- **v2 test 3** (LA County hospital, post-fix2): pending

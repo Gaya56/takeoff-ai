@@ -97,11 +97,11 @@ CATEGORY_COLOR = {
 }
 
 FLAGGED_COLOR = (1, 0.4, 0.5)
-CONFIDENCE_THRESHOLD = 0.65
+CONFIDENCE_THRESHOLD = 0.40
 
 # Fallback crop fractions — used only if dynamic localization fails
-FLOOR_PLAN_TOP_FRAC    = 0.40  # skip top 40% (ASSEMBLAGES + legend)
-FLOOR_PLAN_BOTTOM_FRAC = 0.92  # skip bottom 8% (title block)
+FLOOR_PLAN_TOP_FRAC    = 0.05  # skip top 5% (conservative — keep almost everything)
+FLOOR_PLAN_BOTTOM_FRAC = 0.95  # skip bottom 5% (title block)
 
 
 # ─── Prompts ──────────────────────────────────────────────────────────────────
@@ -462,7 +462,7 @@ class TakeoffPipeline:
                 ],
                 config=types.GenerateContentConfig(
                     temperature=0.0,
-                    max_output_tokens=512,
+                    max_output_tokens=2048,
                     response_mime_type="application/json",
                     response_schema=FloorPlanBBox,
                 ),
@@ -481,8 +481,12 @@ class TakeoffPipeline:
                     "scale_bar_real_ft": bbox.scale_bar_real_ft,
                     "fallback": False,
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            self._errors.append({
+                "page": page_idx,
+                "error": f"Localization exception: {e}",
+                "stage": "localize",
+            })
 
         # Fallback: conservative static crop
         self._errors.append({
@@ -581,7 +585,6 @@ class TakeoffPipeline:
                     max_output_tokens=65536,
                     response_mime_type="application/json",
                     response_schema=FloorPlanAnalysis,
-                    thinking_config=types.ThinkingConfig(thinking_budget=8000),
                     media_resolution="MEDIA_RESOLUTION_HIGH",
                 ),
             )
@@ -741,6 +744,58 @@ class TakeoffPipeline:
             pass
         return 0.0
 
+    # ─── Length computation from coordinates + scale ─────────────────────────
+
+    def _compute_real_lengths(self, detections: list, page_crops: dict, scale_str: str):
+        """Compute real_length_ft from normalized coords + crop rect + scale.
+
+        Scale "1/8 inch = 1'-0 inch" means 1/8 inch on paper = 1 foot real.
+        PDF points: 72 points = 1 inch.
+        So points_per_foot = scale_fraction * 72 (e.g., 0.125 * 72 = 9).
+        Real length = pixel_length_in_points / points_per_foot.
+        """
+        scale_ratio = self._parse_scale_ratio(scale_str) if scale_str else 0.0
+        if scale_ratio <= 0:
+            return  # Can't compute without scale
+
+        points_per_foot = scale_ratio * 72.0
+        if points_per_foot <= 0:
+            return
+
+        for det in detections:
+            # Only compute if Gemini returned 0 or very small value
+            if det.get("real_length_ft", 0) > 0.1:
+                continue
+
+            page_idx = det.get("page", 0)
+            if page_idx >= len(self.doc):
+                continue
+
+            page = self.doc[page_idx]
+            pw, ph = page.rect.width, page.rect.height
+
+            # Convert normalized coords to PDF points using crop rect
+            crop_raw = page_crops.get(page_idx)
+            if crop_raw:
+                cx0, cy0, cx1, cy1 = crop_raw
+                crop_w = cx1 - cx0
+                crop_h = cy1 - cy0
+            else:
+                cx0, cy0 = 0.0, 0.0
+                crop_w, crop_h = pw, ph
+
+            x1 = det["x1"] * crop_w + cx0
+            y1 = det["y1"] * crop_h + cy0
+            x2 = det["x2"] * crop_w + cx0
+            y2 = det["y2"] * crop_h + cy0
+
+            pixel_length = ((x2 - x1)**2 + (y2 - y1)**2)**0.5
+            real_ft = pixel_length / points_per_foot
+
+            # Sanity check: skip if > 200ft or < 0.1ft
+            if 0.1 <= real_ft <= 200.0:
+                det["real_length_ft"] = round(real_ft, 2)
+
     # ─── Orchestration ────────────────────────────────────────────────────────
 
     def analyze_plan(self, user_notes: str = "", user_context: dict = None) -> dict:
@@ -837,6 +892,9 @@ class TakeoffPipeline:
 
             if result.get("scale") and not scale:
                 scale = result["scale"]
+
+        # Compute real_length_ft from coordinates + scale for detections where Gemini returned 0
+        self._compute_real_lengths(all_detections, page_crops, scale)
 
         self.analysis = {
             "wall_types": all_wall_types,
